@@ -1,46 +1,51 @@
-# Deep Learning – Lab 1: Classification and Regression with PyTorch (MLP/DNN)
+# Deep Learning Lab 1: PyTorch DNNs for NYSE Stock Regression and Predictive Maintenance Classification
 
-**Course:** Deep Learning – Pr. Elaachak Lotfi  
-**Institution:** Faculté des Sciences et Techniques de Tanger, Université Abdelmalek Essaadi  
-**Author:** Lorraine Agnès  
-**Tools:** Kaggle Notebooks, PyTorch, scikit-learn, skorch, pandas, matplotlib, seaborn, GitHub
+**Student:** RAHELIARISOA Andriamasy Lorraine Agnès  
+**Program:** Engineering Cycle, Software and Intelligent Systems, Computer Science Department, Faculté des Sciences et Techniques de Tanger, Université Abdelmalek Essaadi  
+**Course:** Deep Learning and Applications  
+**Supervisor:** Pr. Elaachak Lotfi  
+**Academic year:** 2026-2027  
+**Tools:** Kaggle Notebooks, PyTorch, scikit-learn, skorch, imbalanced-learn, pandas, matplotlib, seaborn, GitHub
 
 ## Objective
 
-Get familiar with the PyTorch library by building DNN/MLP architectures for a regression task (Part 1) and a multi-class classification task (Part 2).
+In this lab I learn to build MLP (DNN) models with PyTorch. Part 1 is a regression task on stock prices. Part 2 is a multi-class classification task on machine failures.
 
 ## Repository content
 
 | File | Description |
 |---|---|
 | `part1_regression.ipynb` | Part 1: regression on the NYSE dataset |
-| `part2_classification.ipynb` | Part 2: multi-class classification (to be completed) |
+| `part2_classification.ipynb` | Part 2: multi-class classification on the Predictive Maintenance dataset |
 | `images/` | Figures used in this report |
 
-## Part 1 – Regression (NYSE stock prices)
+## Part 1: Regression (NYSE stock prices)
 
-**Dataset:** [New York Stock Exchange](https://www.kaggle.com/datasets/dgawlik/nyse), file `prices-split-adjusted.csv` (about 850,000 daily records for about 500 companies; columns: date, symbol, open, close, low, high, volume).
+**Dataset:** [New York Stock Exchange](https://www.kaggle.com/datasets/dgawlik/nyse). I used the file `prices-split-adjusted.csv`: about 850,000 daily rows for 501 companies (date, symbol, open, close, low, high, volume).
 
-**Task:** predict the closing price `close` from `open`, `low`, `high` and `volume`.
+**Goal:** predict the closing price `close` from `open`, `low`, `high` and `volume`.
 
-### 1. Exploratory Data Analysis
+### 1. Exploratory data analysis
 
-- No missing values.
-- `open`, `low`, `high` and `close` are almost perfectly correlated (correlation above 0.99), so the regression problem is expected to be easy.
-- `volume` has a very skewed distribution and a scale very different from the prices.
-- Consequences for preprocessing: a `log1p` transform on `volume` and standardization of all variables.
+- There are no missing values.
+- Prices are very skewed to the right. Most values are below 200, but a few reach about 1,600.
+- Volume is even more skewed. A few days have hundreds of millions of shares.
+- `open`, `low`, `high` and `close` are almost the same thing (correlation above 0.99), so I expect the regression to be easy.
+- The variables have very different scales, so I need to standardize them. I also apply `log1p` to volume.
 
 ### 2. Baseline MLP
 
-- **Preprocessing:** `log1p(volume)`, random 80/20 train/test split (`random_state=42`), `StandardScaler` fitted on the training set only (to avoid data leakage) and applied to features and target.
-- **Architecture:** 4 → 64 → 32 → 1, ReLU activations, no activation on the output layer.
-- **Training:** MSE loss, Adam optimizer, learning rate 1e-3, batch size 1024, 20 epochs.
-- **Metric:** since "accuracy" is not meaningful for a regression, the **R² score** is used in place of the accuracy curve requested in the lab.
-- **Result:** R² ≈ 0.9999 on both train and test sets.
+- **Data:** `log1p` on volume, random 80/20 split (`random_state=42`), and a `StandardScaler` fitted on the training set only (to avoid data leakage) and applied to the features and the target. A random split is simple and fine for this lab. For real forecasting I would split by date.
+- **Model:** 4 → 64 → 32 → 1, ReLU activations, no activation on the output.
+- **Training:** MSE loss, Adam, learning rate 1e-3, batch size 1024, 20 epochs.
+- **Metric:** accuracy does not make sense for a regression, so I use the **R² score** instead of the accuracy curve asked in the lab.
+- **Result:** R² is about 0.9999 on both train and test, and the two losses are almost equal, so there is no overfitting. The loss has a small bump at epoch 10 (0.00023, against about 0.0001 before). This is normal noise from Adam with mini-batches, and it goes down again after.
+
+Because the baseline is already at 0.9999, the GridSearch and the regularization can only change the result by very small amounts.
 
 ### 3. Hyperparameter search (GridSearch)
 
-`GridSearchCV` from scikit-learn, with PyTorch models wrapped by `skorch` (`NeuralNetRegressor`). 3-fold cross-validation, R² scoring, on a random subsample of 50,000 training rows to keep the search fast (32 combinations × 3 folds = 96 fits).
+I used `GridSearchCV` from scikit-learn, with the PyTorch models wrapped by `skorch` (`NeuralNetRegressor`). It uses 3-fold cross-validation and the R² score. To keep it fast, I ran it on a random sample of 50,000 training rows (32 combinations × 3 folds = 96 fits). Then I retrained the best configuration on the full training set.
 
 | Hyperparameter | Values tested |
 |---|---|
@@ -50,7 +55,9 @@ Get familiar with the PyTorch library by building DNN/MLP architectures for a re
 | Neurons per hidden layer | 32, 64 |
 | Hidden layers | 1, 2 |
 
-**Best configuration:** Adam, learning rate 0.01, 20 epochs, 2 hidden layers of 64 neurons (cross-validated R² = 0.99986).
+**Best configuration:** Adam, learning rate 0.01, 20 epochs, 2 hidden layers of 64 neurons. Its cross-validated R² is 0.99986, very close to the baseline (0.9999).
+
+This configuration is the biggest one of the grid on every axis (highest learning rate, most epochs, most neurons, most layers). So it sits at the edge of the grid, and a larger grid could give a little more.
 
 ### 4. Learning curves (Loss/Epochs and R²/Epochs)
 
@@ -62,16 +69,14 @@ GridSearch model, retrained on the full training set:
 
 ![GridSearch curves](images/curves_best.png)
 
-**Interpretation**
+- For both models, the train and test curves almost overlap. There is no overfitting.
+- The baseline reaches a low loss in the first epochs, then moves up and down a little. Its R² stays between 0.99973 and 0.99993. These changes are tiny (about 1e-4).
+- The GridSearch model is less stable. Its loss has spikes (up to about 6e-3), its R² falls to 0.994 at epoch 17, and it ends around 0.9992, below the baseline.
+- So the "best" model from the search is not better in practice. I see two reasons. First, the search ran on 50,000 rows, where one epoch has far fewer weight updates than on the full training set, so a learning rate of 0.01 that looked fine becomes too high on the full data. Second, the cross-validation score is taken after the last epoch, which is noisy, and the differences between configurations (5th decimal of R²) are as small as this noise.
 
-- **No overfitting:** train and test curves are almost identical for both models.
-- **Baseline model:** the loss reaches its low level in the very first epochs, then fluctuates (R² between 0.99973 and 0.99993). These oscillations come from mini-batch noise with a constant learning rate; they are tiny in absolute terms (about 1e-4 on R²).
-- **GridSearch model:** clearly less stable. The loss shows spikes (up to about 6e-3) and the R² drops as low as 0.994 (epoch 17), and ends around 0.9992, below the baseline.
-- **The "best" configuration is therefore not better in practice.** Two likely reasons: (1) the search ran on a 50,000-row subsample, where one epoch performs far fewer weight updates than on the full training set, so a learning rate of 0.01 that looked acceptable becomes too aggressive on the full data; (2) the cross-validation score is measured after the last epoch, which is noisy because of the oscillations, and the differences between configurations (5th decimal of R²) are of the same order as this noise.
+### 5. Regularization and comparison
 
-### 5. Regularization techniques and comparison
-
-Seven variants of the same MLP (4 → 64 → 32 → 1, Adam, lr = 1e-3, 20 epochs) were trained under identical conditions. A validation set (10% of the training set) is used by the scheduler and early stopping, so the test set is never used for decisions.
+I trained seven variants of the same MLP (4 → 64 → 32 → 1, Adam, learning rate 1e-3, 20 epochs) under the same conditions. The scheduler and the early stopping use a validation set (10% of the training set), so the test set is never used to make decisions.
 
 | Model | R² train | R² test | MSE test | Epochs run | Best epoch (val) | Instability* | Time (s) |
 |---|---|---|---|---|---|---|---|
@@ -83,53 +88,52 @@ Seven variants of the same MLP (4 → 64 → 32 → 1, Adam, lr = 1e-3, 20 epoch
 | 6. Early stopping (patience 5) | 0.999935 | 0.999934 | 0.000067 | 20 | 17 | 0.000013 | 121.5 |
 | 7. Combined (BatchNorm + weight decay + scheduler + early stopping) | 0.999751 | 0.999750 | 0.000252 | 10 | 5 | 0.000297 | 65.7 |
 
-\*Standard deviation of the test R² over the last 5 epochs (lower is more stable).
+\*Standard deviation of the test R² over the last 5 epochs (lower means more stable).
 
 ![Regularization comparison](images/regularisation_comparaison.png)
 
-**Analysis**
+- There is no overfitting to fix. The gap between train and test R² is at most 5e-6 for every variant.
+- Early stopping, the scheduler and the baseline are almost the same (test R² about 0.99992). Early stopping has the lowest test MSE (0.000067) and the scheduler is the most stable (instability 5e-6). The differences are about 1e-5 and come from one run, so I do not consider them significant.
+- Early stopping never stopped the training early here (20 epochs were run). Its small gain comes from restoring the weights of the best validation epoch (17) instead of the last epoch.
+- The scheduler gives the smoothest curves.
+- Dropout, BatchNorm and weight decay made the results worse. My guess, which I did not test: the network is small and the target is almost a direct function of the inputs, so the noise from Dropout and BatchNorm hurts, and weight decay pushes the weights away from the values needed for an almost linear relation.
+- The combined model is worse than the baseline. Early stopping triggered at epoch 10 (best epoch 5), probably because the validation loss of the BatchNorm network is noisy. It is the fastest model (65.7 s), but less accurate.
 
-- **No overfitting to fix:** the train/test R² gap is at most 5e-6 for every variant, so regularization had no generalization gap to reduce on this task.
-- **Best results:** early stopping (lowest test MSE, 0.000067), the learning-rate scheduler (the most stable, instability 5e-6) and the baseline are practically equivalent (R² test ≈ 0.99992). The differences (about 1e-5) come from a single run and should not be considered significant.
-- **Early stopping:** with patience 5 it never triggered in the standalone run (20 epochs executed); its small gain comes from restoring the weights of the best validation epoch (17) instead of the last epoch.
-- **Scheduler:** reducing the learning rate when the validation loss stagnates gives the smoothest curves.
-- **Dropout, BatchNorm and weight decay degrade the results.** Likely explanations (not tested): the network is small and the target is an almost deterministic function of the inputs, so Dropout adds noise to the output and BatchNorm adds batch-dependent noise, while weight decay pulls the weights away from the values needed for an almost linear mapping.
-- **Combined model:** worse than the baseline. Early stopping triggered at epoch 10 (best epoch 5), probably because the validation loss of the BatchNorm network is noisy. It is the fastest model (65.7 s), but at the cost of accuracy.
+### 6. Conclusions and limits
 
-### 6. Conclusions and limitations
+- A small MLP predicts `close` with R² of about 0.9999. The problem is easy because `close` is almost fixed by `open`, `low` and `high`.
+- Here, regularization improves stability (scheduler) and model choice (early stopping with best weights), not generalization.
+- The hyperparameters chosen on a sample did not carry over to the training on the full data.
+- Limits: random split instead of a split by date, one random seed, a small grid with the best point on its edge, and R² used in place of accuracy.
 
-- A small MLP predicts `close` with R² ≈ 0.9999. The problem is easy because `close` is strongly determined by `open`, `low` and `high`.
-- On this problem, regularization improves **stability** (scheduler) and model selection (early stopping with best-weights restoration), not generalization.
-- Hyperparameters selected on a subsample did not transfer to full-data training.
-- Limitations: random split instead of a chronological split (a real forecasting setting would predict future prices), single random seed (no confidence intervals), a search grid that is small and whose best point lies on its boundary, and R² used as a substitute for accuracy.
+## Part 2: Multi-class classification (Predictive Maintenance)
 
-## Part 2 – Multi-class classification (Predictive Maintenance)
-**Dataset:** [Machine Predictive Maintenance Classification](https://www.kaggle.com/datasets/shivamb/machine-predictive-maintenance-classification), 10,000 records of a machine process (product type, air temperature, process temperature, rotational speed, torque, tool wear), with two label columns: `Target` (failure yes/no) and `Failure Type` (type of failure).
+**Dataset:** [Machine Predictive Maintenance Classification](https://www.kaggle.com/datasets/shivamb/machine-predictive-maintenance-classification). It has 10,000 records of a machine process (product type, air temperature, process temperature, rotational speed, torque, tool wear) and two label columns: `Target` (failure yes or no) and `Failure Type` (the type of failure).
 
-**Task:** multi-class classification of `Failure Type` (6 classes) from the sensor measurements.
+**Goal:** predict `Failure Type` (6 classes) from the sensor values.
 
-### 1. Pre-processing (cleaning and standardization)
+### 1. Pre-processing
 
-**Data quality checks**
+**Checks**
 
-- No missing values, no duplicated rows, no duplicated `Product ID`.
-- A cross-tabulation of `Target` and `Failure Type` revealed **9 inconsistent rows** (`Target = 1` but `Failure Type = No Failure`). They were **removed** (9,991 rows remain).
-- The 18 `Random Failures` rows have `Target = 0` (random failures are not linked to the sensor values). They were **kept** as their own class, but they are expected to be unpredictable.
+- There are no missing values, no duplicate rows and no duplicate `Product ID`.
+- Comparing `Target` and `Failure Type` showed 9 rows with `Target = 1` but `Failure Type = No Failure`. These labels contradict each other, so I removed them. 9,991 rows are left.
+- The 18 `Random Failures` rows have `Target = 0`. I kept them as their own class, but I expect them to be very hard to predict.
 
-**Transformations**
+**What I did**
 
-| Step | Decision | Reason |
+| Step | What I did | Why |
 |---|---|---|
-| Columns `UDI`, `Product ID` | Dropped | Simple identifiers, no predictive information |
-| Column `Target` | Dropped | It is derived from `Failure Type`: keeping it would be **data leakage** |
-| Column `Type` (L/M/H) | Ordinal encoding L=0, M=1, H=2 | Quality variants with a natural order |
-| Target `Failure Type` | `LabelEncoder` | 0 = Heat Dissipation, 1 = No Failure, 2 = Overstrain, 3 = Power, 4 = Random, 5 = Tool Wear |
-| Train/test split | Stratified 80/20 (`random_state=42`): 7,992 / 1,999 samples | Every class keeps its proportion in both sets |
-| Standardization | `StandardScaler` (z-score), **fitted on the training set only** | Features have very different scales (about 300 K, 1500 rpm, 40 Nm, 0–250 min); avoids data leakage |
+| Columns `UDI` and `Product ID` | Removed | They are only identifiers |
+| Column `Target` | Removed | It comes from `Failure Type`, so keeping it would be data leakage |
+| Column `Type` (L, M, H) | Ordinal encoding: L=0, M=1, H=2 | Low, medium and high quality have a natural order |
+| Target `Failure Type` | `LabelEncoder`: 0 = Heat Dissipation, 1 = No Failure, 2 = Overstrain, 3 = Power, 4 = Random, 5 = Tool Wear | The model needs numbers |
+| Train/test split | Stratified 80/20 (`random_state=42`): 7,992 and 1,999 samples | Each class keeps its share in both sets |
+| Standardization | `StandardScaler`, fitted on the training set only | The variables have very different scales (about 300 K, 1500 rpm, 40 Nm, 0 to 250 min) |
 
-The split is done **before** any resampling: class balancing (see below) is applied to the training set only, and the test set keeps the real, imbalanced distribution.
+I split the data before any balancing. The balancing is applied to the training set only, so the test set keeps the real distribution.
 
-### 2. Exploratory Data Analysis
+### 2. Exploratory data analysis
 
 **Class distribution**
 
@@ -144,13 +148,13 @@ The split is done **before** any resampling: class balancing (see below) is appl
 
 ![Class distribution](images/p2_class_distribution.png)
 
-The dataset is **extremely imbalanced**: a model that always predicts "No Failure" would reach 96.5% accuracy without detecting any failure. Accuracy alone is therefore a misleading metric, and the evaluation will rely on per-class recall and the macro F1-score.
+The data is extremely imbalanced. A model that always answers "No Failure" would get 96.5% accuracy and detect nothing. So accuracy alone is misleading. I use the recall and F1-score of each class, and the macro F1.
 
-**Features by failure type**
+**Variables by failure type**
 
 ![Boxplots by failure type](images/p2_boxplots_by_failure.png)
 
-Mean of each variable per class:
+Mean of each variable for each class:
 
 | Failure Type | air_temp | process_temp | rot_speed | torque | tool_wear |
 |---|---|---|---|---|---|
@@ -161,41 +165,43 @@ Mean of each variable per class:
 | Random Failures | 300.8 | 310.8 | 1489.4 | 43.5 | 119.9 |
 | Tool Wear Failure | 300.3 | 310.2 | 1570.7 | 37.2 | 216.6 |
 
-- **Tool Wear Failure** and **Overstrain Failure** are clearly identified by a high and narrow `tool_wear` (mean about 210–217 min, versus about 107 for normal operation).
-- **Overstrain Failure** also has a high torque (56.9 Nm) and a low, narrow rotational speed.
-- **Heat Dissipation Failure** has a higher air temperature (302.6 K vs 300.0 K) and a low, narrow rotational speed (about 1,340 rpm).
-- **Power Failure** has a very wide spread of both `rot_speed` and `torque`, covering extreme values on both sides, which suggests two distinct failure regimes.
-- **Random Failures** show no clear signature: their distributions overlap with normal operation on all variables.
-- `process_temp` differs little between classes.
+- Tool Wear and Overstrain failures have a high tool wear (mean about 217 and 208 min, against about 107 for normal machines) with a narrow spread.
+- Overstrain also has a high torque (56.9 Nm) and a low speed.
+- Heat Dissipation has a higher air temperature (302.6 K against 300.0 K) and a low speed (about 1,340 rpm).
+- Power failures have a very wide spread of speed and torque, with extreme values on both sides. It looks like two different kinds of situations.
+- Random failures look like normal operation on every variable.
+- The process temperature hardly changes between classes.
 
-**Torque vs rotational speed**
+**Torque and rotational speed**
 
 ![Torque vs rotational speed](images/p2_torque_vs_speed.png)
 
-- Torque and rotational speed follow a strong, **non-linear inverse relationship**, which is consistent with a roughly constant mechanical power during normal operation.
-- **Power Failures** are located at the two extremes of this curve: high torque with low speed (top left) and very low torque with high speed (above about 2,150 rpm, bottom right). This is consistent with failures linked to a mechanical power that is too high or too low (hypothesis).
-- **Overstrain** and **Heat Dissipation** failures form compact clusters at low speed (about 1,250–1,450 rpm) and medium to high torque.
-- **Tool Wear** and **Random** failures lie along the normal operating curve: torque and speed alone cannot separate them from normal operation (for Tool Wear, `tool_wear` is the discriminating variable).
+- Torque goes down when speed goes up, along a curved line. This looks like a roughly constant power in normal operation.
+- Power failures are at both ends of this curve: high torque with low speed (top left), and very low torque with high speed (above about 2,150 rpm, bottom right). Maybe the mechanical power is too high or too low in these cases.
+- Overstrain and Heat Dissipation failures form small groups at low speed (about 1,250 to 1,450 rpm) with medium to high torque.
+- Tool Wear and Random failures lie on the normal curve, so torque and speed cannot separate them from normal operation. For Tool Wear, the tool wear variable is what makes the difference.
 
 **Correlations**
 
 ![Correlation matrix](images/p2_correlation.png)
 
-**Implications for the modelling**
+`rot_speed` and `torque` are strongly negatively correlated, which matches the scatter plot above.
 
-1. The classes are extremely imbalanced, so the **training set must be balanced** (next step) and the evaluation must use **per-class recall, F1-score per class and macro F1**, with a confusion matrix.
-2. Several classes overlap with normal operation (Tool Wear, Random), and the relationships are non-linear (torque/speed curve, failures at both extremes). A non-linear model such as an MLP is therefore appropriate.
-3. `Random Failures` are expected to remain unpredictable, whatever the model.
-4. The stratified test set contains very few samples of the rarest classes (about 4 `Random Failures` and 9 `Tool Wear Failures`), so the metrics on these classes will be noisy.
-5. Possible improvement, **not applied in this lab**: engineered features such as the temperature difference, the mechanical power (torque × speed) or torque × tool wear.
+**What this means for the model**
 
-### 3. Data augmentation / class balancing
+1. The training set must be balanced (see section 3), and I must judge the model with the recall and F1 of each class, the macro F1 and a confusion matrix.
+2. Some classes overlap with normal operation (Tool Wear, Random) and the relations are not linear (the torque and speed curve, failures at both ends). So a non-linear model like an MLP makes sense.
+3. I expect `Random Failures` to stay unpredictable, whatever the model.
+4. The test set has very few samples of the rarest classes (4 `Random Failures` and 9 `Tool Wear Failures`), so the metrics for these classes will be noisy.
+5. An idea I did not use in this lab: add new variables such as the temperature difference, the mechanical power (torque × speed) or torque × tool wear.
 
-Balancing is applied to the **training set only**; the test set keeps its real, imbalanced distribution.
+### 3. Data augmentation (class balancing)
 
-- `No Failure` is under-sampled to 2,000 samples (`RandomUnderSampler`).
-- Each minority class is over-sampled to 2,000 samples with **SMOTENC**. Plain SMOTE would interpolate the categorical `Type` variable and create meaningless values (e.g. 0.37); SMOTENC treats it as categorical and always produces a valid value (0, 1 or 2).
-- A hybrid approach was chosen because over-sampling everything up to about 7,700 samples would create thousands of synthetic points from only 14 real `Random Failures`.
+I balanced the **training set only**. The test set keeps its real, imbalanced distribution.
+
+- I reduced `No Failure` to 2,000 samples with `RandomUnderSampler`.
+- I increased each other class to 2,000 samples with **SMOTENC**. Plain SMOTE would mix values of the category `Type` and create values that make no sense (like 0.37). SMOTENC treats `Type` as a category and always gives a valid value (0, 1 or 2).
+- I used both methods together because raising every class to about 7,700 samples would create thousands of fake points from only 14 real `Random Failures`.
 
 | Class | Before | After |
 |---|---|---|
@@ -208,25 +214,25 @@ Balancing is applied to the **training set only**; the test set keeps its real, 
 
 ![Class balancing](images/p2_balancing.png)
 
-**Limitation:** the synthetic samples of the rarest classes are interpolations between very few real points (14 for `Random Failures`), so they add little new information. `Random Failures` resemble normal operation, so the model is still expected to detect them poorly.
+The fake samples of the rarest classes are only mixes of very few real points (14 for `Random Failures`), so they bring little new information. Since `Random Failures` look like normal operation, I still expect the model to detect them badly.
 
 ### 4. MLP architecture
 
-- **Input:** the 6 standardized features. **Output:** 6 logits (one per failure type), with `CrossEntropyLoss` (softmax included in the loss).
-- **Architecture:** 6 → 64 → 32 → 6, ReLU activations.
-- **Training:** Adam, learning rate 1e-3, 30 epochs, batch size 256, on the balanced training set (12,000 samples). The real test set (1,999 samples) is evaluated after each epoch.
+- **Input:** the 6 standardized variables. **Output:** 6 values, one per failure type, with `CrossEntropyLoss` (the softmax is inside the loss).
+- **Layers:** 6 → 64 → 32 → 6, with ReLU.
+- **Training:** Adam, learning rate 1e-3, 30 epochs, batch size 256, on the balanced training set (12,000 samples). After each epoch I also evaluate on the real test set (1,999 samples).
 
 ### 5. Hyperparameter search (GridSearch)
 
-`GridSearchCV` from scikit-learn with `skorch` (`NeuralNetClassifier`).
+I used `GridSearchCV` from scikit-learn with `skorch` (`NeuralNetClassifier`).
 
-**Leak-free validation.** A standard cross-validation on the balanced training set would put synthetic points derived from the same real sample in both the training and validation folds, and inflate the scores. Instead:
-- the original (real) training set was split 80/20 (stratified);
-- the 80% part was balanced with the same method as in step 3 (12,000 samples);
-- the 20% part (1,599 samples) was kept **untouched**, with the real imbalanced distribution, as the validation set;
-- a `PredefinedSplit` makes `GridSearchCV` use exactly this split.
+A normal cross-validation on the balanced training set would be wrong. Fake points made from the same real sample could end up in both the training fold and the validation fold, and the scores would look too good. So I did this:
+- I split the real training set 80/20 (stratified).
+- I balanced the 80% part with the same method as in section 3 (12,000 samples).
+- I kept the 20% part (1,599 samples) untouched, with the real distribution, as the validation set.
+- A `PredefinedSplit` makes `GridSearchCV` use exactly this split.
 
-**Score:** macro F1-score (accuracy would reward a model that always predicts "No Failure").
+The score is the macro F1, because accuracy would reward a model that always predicts "No Failure".
 
 | Hyperparameter | Values tested |
 |---|---|
@@ -246,22 +252,32 @@ Balancing is applied to the **training set only**; the test set keeps its real, 
 | 0.01 | 40 | 32 | 1 | Adam | 0.330 |
 | 0.01 | 20 | 64 | 1 | Adam | 0.316 |
 
-**Comments**
-
-- The macro F1 is low because the validation set keeps the real distribution (about 96.5% `No Failure`) while the model is trained on balanced data: it tends to raise false alarms on healthy machines, which lowers the precision of the minority classes, and `Random Failures` (about 3 validation samples) are essentially unpredictable. These explanations are hypotheses; the per-class metrics (section 7) give the detail.
-- The differences between the top configurations are small and come from a single validation split with very few rare-class samples, so they should not be over-interpreted.
-- The best configuration lies on the boundary of the grid (largest learning rate, 40 epochs, and the top 4 all use 40 epochs): a wider grid could give slightly better results.
-- Unlike in Part 1, the search was run on training data of the same size as the final training set (12,000 samples), so the selected hyperparameters transfer better to the final training.
+- The macro F1 is low, and I think this is because the validation set keeps the real distribution (about 96.5% `No Failure`) while the model learns on balanced data. The model raises false alarms on healthy machines, which lowers the precision of the small classes. Also, `Random Failures` have only about 3 samples in the validation set and are almost impossible to predict. I checked the details per class in section 7.
+- The best configurations are close to each other. They come from one validation split with very few rare samples, so I would not read too much into the order.
+- The best configuration is on the edge of the grid (highest learning rate, 40 epochs, and the top 4 all use 40 epochs). A larger grid could give a little more.
+- Unlike in Part 1, the search used training data of the same size as the final training (12,000 samples), so the chosen settings should carry over better.
 
 ### 6. Learning curves
 
-Curves are plotted for the base MLP and for the GridSearch MLP. The training curve is computed on the **balanced** training set and the test curve on the **real** (imbalanced) test set, so their absolute values are not directly comparable.
+I plotted the curves for the base MLP and for the GridSearch MLP. The training curve is computed on the balanced training set and the test curve on the real test set, so the two are not directly comparable.
 
-![Base MLP curves](images/p2_curves_base.png)
+![Base MLP and GridSearch MLP curves](images/p2_curves_base.png)
 
 ![GridSearch MLP curves](images/p2_curves_best.png)
 
-GridSearch MLP, logged every 5 epochs:
+Base MLP (30 epochs):
+
+| Epoch | Train loss | Test loss | Train accuracy | Test accuracy |
+|---|---|---|---|---|
+| 1 | 1.3520 | 1.5318 | 0.6027 | 0.3087 |
+| 5 | 0.3514 | 0.8183 | 0.8888 | 0.6288 |
+| 10 | 0.2359 | 0.6669 | 0.9248 | 0.6998 |
+| 15 | 0.1915 | 0.5453 | 0.9407 | 0.7629 |
+| 20 | 0.1650 | 0.5794 | 0.9517 | 0.7544 |
+| 25 | 0.1441 | 0.4793 | 0.9624 | 0.8014 |
+| 30 | 0.1311 | 0.4957 | 0.9633 | 0.8014 |
+
+GridSearch MLP (40 epochs):
 
 | Epoch | Train loss | Test loss | Train accuracy | Test accuracy |
 |---|---|---|---|---|
@@ -275,17 +291,13 @@ GridSearch MLP, logged every 5 epochs:
 | 35 | 0.0748 | 0.3439 | 0.9834 | 0.8969 |
 | 40 | 0.0671 | 0.4054 | 0.9822 | 0.8834 |
 
-**Interpretation**
-
-- The training loss decreases steadily and the training accuracy reaches about 98%.
-- The test loss decreases much more slowly, stays 5 to 6 times higher (0.34 to 0.50) and fluctuates from one epoch to another: there is a clear gap between training and test performance.
-- The test accuracy rises from 0.61 to about 0.89 and is still improving until epoch 35, then drops slightly at epoch 40. This is consistent with the best configuration lying on the boundary of the grid (40 epochs) and suggests that the model could still benefit from more training.
-- The gap is partly structural (the model is trained on balanced data and evaluated on imbalanced data) and partly overfitting on the rare classes (see section 7).
-- <<Base MLP: describe what you see in images/p2_curves_base.png (convergence speed, stability, gap between train and test).>>
+- **Base MLP:** the training loss goes down from 1.35 to 0.13 and the training accuracy goes up from 0.60 to 0.96. The test loss goes down more slowly (from 1.53 to about 0.50) and the test accuracy stays between 0.79 and 0.82 from epoch 22. It learns more slowly than the GridSearch MLP, probably because its learning rate is 10 times smaller (1e-3 against 1e-2), and it ends lower (0.80 against 0.88).
+- **GridSearch MLP:** the training loss goes down steadily and the training accuracy reaches about 98%. The test loss stays 5 to 6 times higher (0.34 to 0.50) and moves up and down from one epoch to the next. The test accuracy goes from 0.61 to about 0.89, is still improving until epoch 35, then drops a little at epoch 40. This fits the fact that 40 epochs is the edge of the grid, so the model could still learn more.
+- For both models there is a clear gap between training and test. Part of it comes from the change of distribution (balanced for training, imbalanced for testing), and part comes from overfitting on the rare classes (see section 7).
 
 ### 7. Metrics
 
-Metrics were computed for both models on three sets: the balanced training set (what the model has seen), the training set with its real distribution, and the real test set. *Sensitivity* is the recall (share of the true failures of a class that are detected).
+I computed the metrics for both models on three sets: the balanced training set (what the model saw), the training set with its real distribution, and the real test set. *Sensitivity* is the recall, meaning the share of the real failures of a class that the model finds.
 
 | Model | Set | Accuracy | Precision (macro) | Sensitivity (macro recall) | F1 (macro) | F1 (weighted) |
 |---|---|---|---|---|---|---|
@@ -296,7 +308,7 @@ Metrics were computed for both models on three sets: the balanced training set (
 | GridSearch MLP | Train (real distribution) | 0.8946 | 0.4484 | 0.9284 | 0.5377 | 0.9301 |
 | GridSearch MLP | Test (real distribution) | 0.8834 | 0.4073 | 0.6487 | 0.4797 | 0.9224 |
 
-**Per-class results of the GridSearch MLP on the test set**
+Results of the GridSearch MLP for each class on the test set:
 
 | Failure Type | Precision | Recall (sensitivity) | F1-score | Support |
 |---|---|---|---|---|
@@ -309,26 +321,24 @@ Metrics were computed for both models on three sets: the balanced training set (
 
 ![Confusion matrix](images/p2_confusion_matrix.png)
 
-**Analysis**
-
-- **Distribution shift.** The performance drop already appears on the real training data (accuracy 0.895, macro precision 0.448) and is similar on the test set (0.883, 0.407). It is therefore mostly caused by the change of class distribution (balanced for training, about 96.5% `No Failure` in reality), which lowers the precision of the minority classes.
-- **Overfitting on rare classes.** The macro recall is 0.928 on the real training set but 0.649 on the test set: the model detects the rare failures it has already seen far better than new ones.
-- **Well-detected failures.** `Heat Dissipation`, `Overstrain` and `Power` failures are detected almost perfectly (recall 1.00, 1.00 and 0.89: 55 of 57 failures), but with a precision of only 0.45 to 0.53, because of false alarms.
-- **False alarms.** 219 of the 1,929 healthy machines (11.4%) are flagged as failing. This is why the accuracy (88.3%) is lower than that of a trivial model that always predicts "No Failure" (96.5%): the model trades accuracy for the detection of failures.
-- **Undetected failures.** `Tool Wear` (recall 0.11) and `Random Failures` (recall 0.00) are essentially not detected. 87 healthy machines are predicted as `Tool Wear` and 74 as `Random Failures`. A likely explanation (hypothesis) is that these classes overlap with normal operation (see the EDA), so their thousands of synthetic samples, generated from only 36 and 14 real points, cover the region of normal operation.
-- **Base vs GridSearch.** The GridSearch MLP is better in accuracy (0.883 vs 0.801) and slightly better in macro F1 (0.480 vs 0.463), with a slightly lower macro recall (0.649 vs 0.681). The improvement is modest and comes from a single run.
-- **Reliability of the numbers.** The test set contains only 4 `Random Failures` and 9 `Tool Wear Failures`: one more correct prediction changes the recall of `Tool Wear` by 11 points, so the metrics of these classes are very noisy.
-- **Possible improvements (not tested):** a milder balancing (keeping more `No Failure` samples), class weights in the loss, adjusting the decision thresholds, or engineered features (temperature difference, mechanical power, torque × tool wear).
+- **The change of distribution is the main problem.** The drop already shows on the real training data (accuracy 0.895, macro precision 0.448) and it is similar on the test set (0.883 and 0.407). The model learns on balanced data, but in real life about 96.5% of the machines are healthy, so the precision of the small classes falls.
+- **There is also some overfitting on the rare classes.** The macro recall is 0.928 on the real training set but 0.649 on the test set. The model finds the rare failures it has already seen much better than new ones.
+- **Three failure types are found well.** Heat Dissipation, Overstrain and Power have a recall of 1.00, 1.00 and 0.89 (55 of 57 failures found). Their precision is only 0.45 to 0.53 because of false alarms.
+- **There are many false alarms.** 219 of the 1,929 healthy machines (11.4%) are flagged as failing. This is why the accuracy (88.3%) is lower than the 96.5% of a model that always says "No Failure". The model gives up some accuracy to detect failures.
+- **Tool Wear and Random Failures are not found.** Their recall is 0.11 and 0.00. 87 healthy machines are predicted as Tool Wear and 74 as Random. I think this happens because these classes look like normal operation (see the EDA), so their thousands of fake samples, made from only 36 and 14 real points, cover the area of normal machines.
+- **GridSearch MLP against base MLP.** The GridSearch MLP has a better accuracy (0.883 against 0.801) and a slightly better macro F1 (0.480 against 0.463), with a slightly lower macro recall (0.649 against 0.681). The gain is small and comes from one run.
+- **The numbers for the rare classes are noisy.** The test set has only 4 `Random Failures` and 9 `Tool Wear Failures`. One more correct prediction changes the recall of Tool Wear by 11 points.
+- **Ideas I did not test:** keep more `No Failure` samples when balancing, use class weights in the loss, change the decision thresholds, or add new variables (temperature difference, mechanical power, torque × tool wear).
 
 ### 8. Regularization and comparison
 
-Six variants of the best architecture found by the GridSearch (6 → 64 → 6, Adam, learning rate 0.01, 40 epochs) were trained under identical conditions:
+I trained six variants of the best architecture from the GridSearch (6 → 64 → 6, Adam, learning rate 0.01, 40 epochs) under the same conditions:
 
 - **Training data:** the balanced "fit" part of the training set (12,000 samples), without the validation samples.
-- **Validation:** the real validation set (1,599 samples, never used for training), used to select the best epoch (macro F1).
-- **Test:** the real test set, used for the final report only.
+- **Validation:** the real validation set (1,599 samples, never used for training), used to choose the best epoch with the macro F1.
+- **Test:** the real test set, used only for the final report.
 
-The baseline was **retrained in this setup**, so its numbers differ from section 7 (where the model was trained on the whole balanced training set).
+I retrained the baseline in this setup, so its numbers are different from section 7, where the model was trained on the whole balanced training set.
 
 | Model | Train acc (balanced) | Best val macro F1* | Test acc | Test macro precision | Test macro recall | Test macro F1 | Epochs run | Best epoch (val) | Time (s) |
 |---|---|---|---|---|---|---|---|---|---|
@@ -339,41 +349,39 @@ The baseline was **retrained in this setup**, so its numbers differ from section
 | 5. Early stopping (patience 8) | 0.9808 | 0.5263 | 0.8969 | 0.4426 | 0.6250 | 0.5023 | 29 | 21 | 3.6 |
 | 6. Combined (Dropout 0.3 + weight decay 1e-4 + early stopping) | 0.9760 | 0.4689 | 0.8724 | 0.3886 | 0.6381 | 0.4589 | 31 | 23 | 4.0 |
 
-\*Maximum validation macro F1 reached during training. For the runs without early stopping, the evaluated model is the one of the last epoch.
+\*Highest validation macro F1 reached during the training. For the runs without early stopping, the model that is evaluated is the one from the last epoch.
 
 ![Regularization comparison](images/p2_regularization_comparison.png)
 
-The baseline and the early-stopping runs use the same seed and therefore follow the same trajectory until early stopping triggers at epoch 29, so the baseline curve is hidden behind it.
+The baseline and the early stopping run use the same seed, so they follow the same path until early stopping triggers at epoch 29. This is why the baseline curve is hidden behind the other one.
 
-**Analysis**
+- **Early stopping** gives the best test macro F1 (0.502) and the best macro precision (0.443), and it needs fewer epochs (29 instead of 40). The gain over the baseline (+0.009 in macro F1) is too small to count as real.
+- **Weight decay (1e-3)** clearly makes things worse (test macro F1 0.412, accuracy 0.825, and a lower training accuracy). The penalty is probably too strong for this small network, so it underfits. I did not try other values.
+- **Dropout (0.3)** gives the highest macro recall (0.669) but a lower accuracy and precision. It finds more failures but raises more false alarms. Its macro F1 (0.481) is a little under the baseline.
+- **BatchNorm** gives the noisiest validation curve and no gain (macro F1 0.473).
+- **The combined model** (macro F1 0.459) is worse than each of its parts alone. Using several techniques together did not add up.
+- **No technique clearly beats the baseline.** All of them lower the training accuracy a little (from 0.988 to 0.976 to 0.981) without improving the test results. The gap between training and test comes mostly from the change of distribution and from the very small number of rare samples (see section 7), and these general techniques do not fix that.
+- **There is a lot of noise.** The same configuration gets a test accuracy of 0.883 when trained on the whole balanced training set (section 7) and 0.914 here. This is a 3-point difference without any regularization, as big as most differences between the techniques. The test set has only 4 `Random Failures` and 9 `Tool Wear Failures`, the validation macro F1 moves by several points from one epoch to the next (the validation set has only about 3 and 7 samples of these classes), and I used one seed. Only the big effect (weight decay at 1e-3 hurts) is reliable. To rank the other techniques, I would need several seeds or cross-validation.
 
-- **Early stopping** gives the best test macro F1 (0.502) and the best macro precision (0.443), and needs fewer epochs (29 instead of 40). The gain over the baseline (+0.009 in macro F1) is however too small to be considered significant.
-- **Weight decay (1e-3)** clearly degrades the results (test macro F1 0.412, accuracy 0.825, and a lower training accuracy): the penalty is probably too strong for this small network, which then underfits. Other values were not tested.
-- **Dropout (0.3)** gives the highest macro recall (0.669) but a lower accuracy and precision: the model detects more failures but raises more false alarms. Its macro F1 (0.481) is slightly below the baseline.
-- **BatchNorm** gives the noisiest validation curve and no improvement (macro F1 0.473).
-- **Combined:** stacking the techniques did not add up (macro F1 0.459, below each of its components taken alone).
-- **No technique clearly beats the baseline.** All of them slightly reduce the training accuracy (0.988 to 0.976–0.981) without improving the test performance. The gap between training and test performance mainly comes from the change of class distribution and from the scarcity of rare-class samples (see section 7), which generic regularizers do not address.
-- **Noise.** The same configuration reaches a test accuracy of 0.883 when trained on the whole balanced training set (section 7) and 0.914 here: a 3-point difference without any regularization, as large as most differences between techniques. The test set contains only 4 `Random Failures` and 9 `Tool Wear Failures`, the validation macro F1 fluctuates by several points from one epoch to the next (the validation set has only about 3 and 7 samples of these classes), and a single seed was used. Only the large effect (weight decay at 1e-3 hurts) is reliable; the other differences cannot be distinguished from noise. A firm ranking would require several seeds or cross-validation.
+### 9. Conclusions and limits
 
-### 9. Conclusions and limitations (Part 2)
-
-- A careful pipeline was set up: cleaning of inconsistent labels, removal of the leaking `Target` column, stratified split **before** any resampling, scaler fitted on the training set only, and balancing applied to the training data only (hybrid under-sampling + SMOTENC).
-- The final MLP reaches a test accuracy of about 0.88–0.91 and a macro F1 of about 0.48–0.50. It detects three failure types reliably (recall of at least 0.89 for `Heat Dissipation`, `Overstrain` and `Power`) but with many false alarms (about 11% of healthy machines flagged), and it essentially fails on `Tool Wear` and `Random Failures`.
-- Regularization did not bring a clear improvement; early stopping was the most useful technique (same performance, fewer epochs).
-- **Limitations:** very few samples for the rarest classes (14 `Random Failures` and 36 `Tool Wear Failures` in the training set, 4 and 9 in the test set), so all metrics for these classes are noisy; a single random seed; a balancing level (2,000 per class) that is probably too aggressive for the rarest classes; no feature engineering; no tuning of the decision thresholds.
-- **Perspectives:** milder balancing, class weights in the loss, engineered features (temperature difference, mechanical power, torque × tool wear), threshold tuning, and repeated runs or cross-validation to compare techniques reliably.
+- I built the pipeline carefully: I removed the contradicting labels and the `Target` column that leaks the answer, I split the data before balancing, I fitted the scaler on the training set only, and I balanced the training data only (under-sampling and SMOTENC).
+- The final MLP has a test accuracy of about 0.88 to 0.91 and a macro F1 of about 0.48 to 0.50. It finds three failure types well (recall of at least 0.89 for Heat Dissipation, Overstrain and Power) but with many false alarms (about 11% of the healthy machines are flagged). It does not find Tool Wear and Random Failures.
+- Regularization did not give a clear gain. Early stopping was the most useful, with the same performance in fewer epochs.
+- **Limits:** the rarest classes have very few samples (14 `Random Failures` and 36 `Tool Wear Failures` in the training set, 4 and 9 in the test set), so their metrics are noisy. I used one random seed. Balancing to 2,000 samples per class is probably too strong for the rarest classes. I did not add new variables or tune the decision thresholds.
+- **What I would try next:** a lighter balancing, class weights in the loss, new variables (temperature difference, mechanical power, torque × tool wear), tuning the thresholds, and several runs or cross-validation to compare techniques fairly.
 
 ## What I learned
 
-- Building and training an MLP in PyTorch: tensors, `Dataset`/`DataLoader`, the training loop and the evaluation loop, for both regression and multi-class classification.
-- Preventing data leakage: fitting the scaler on the training data only, splitting before resampling, removing a column derived from the target, and keeping a separate validation set so that the test set is never used for decisions.
-- Running a hyperparameter search with scikit-learn and skorch, and its pitfalls: a search on a subsample may not transfer to full-data training, a cross-validation on synthetic data leaks information (a `PredefinedSplit` with a real validation set avoids this), and noisy scores make small differences meaningless.
-- Accuracy is misleading on imbalanced data: per-class recall, macro F1-score and the confusion matrix tell the real story. Balancing the training set shifts the class distribution and trades accuracy for the detection of rare failures (more false alarms).
-- Reading learning curves (overfitting, convergence, oscillations) and choosing suitable axis scales.
-- Regularization is not an automatic improvement: its usefulness depends on whether the model actually overfits, and with very few samples per class and a single run, small differences between techniques cannot be interpreted.
+- How to build and train an MLP in PyTorch: tensors, `Dataset` and `DataLoader`, the training loop and the evaluation loop, for both regression and classification.
+- How to avoid data leakage: fit the scaler on the training data only, split before balancing, remove a column that comes from the target, and keep a validation set so the test set is never used to make decisions.
+- How to run a hyperparameter search with scikit-learn and skorch, and what can go wrong: a search on a small sample may not work on the full data, a cross-validation on fake samples leaks information (a `PredefinedSplit` with a real validation set fixes this), and noisy scores make small differences meaningless.
+- Accuracy can be misleading with imbalanced data. The recall of each class, the macro F1 and the confusion matrix show what really happens. Balancing the training set changes the class distribution, so the model finds more rare failures but raises more false alarms.
+- How to read learning curves (overfitting, convergence, noise) and how to pick a good scale for the axes.
+- Regularization does not always help. It only helps if the model really overfits, and with very few samples per class and one run, small differences between techniques cannot be trusted.
 
 ## How to run
 
-1. Open the notebooks on Kaggle and add the datasets as inputs: [NYSE](https://www.kaggle.com/datasets/dgawlik/nyse) and [Machine Predictive Maintenance Classification](https://www.kaggle.com/datasets/shivamb/machine-predictive-maintenance-classification).
-2. Enable Internet in the notebook settings (needed to install `skorch`).
-3. Run all cells from top to bottom.
+1. Open the notebooks on Kaggle and add the two datasets as inputs: [NYSE](https://www.kaggle.com/datasets/dgawlik/nyse) and [Machine Predictive Maintenance Classification](https://www.kaggle.com/datasets/shivamb/machine-predictive-maintenance-classification).
+2. Turn on Internet in the notebook settings (needed to install `skorch`).
+3. Run all the cells from top to bottom.
