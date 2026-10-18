@@ -191,9 +191,77 @@ Mean of each variable per class:
 
 ### 3. Data augmentation / class balancing
 
+Balancing is applied to the **training set only**; the test set keeps its real, imbalanced distribution.
+
+- `No Failure` is under-sampled to 2,000 samples (`RandomUnderSampler`).
+- Each minority class is over-sampled to 2,000 samples with **SMOTENC**. Plain SMOTE would interpolate the categorical `Type` variable and create meaningless values (e.g. 0.37); SMOTENC treats it as categorical and always produces a valid value (0, 1 or 2).
+- A hybrid approach was chosen because over-sampling everything up to about 7,700 samples would create thousands of synthetic points from only 14 real `Random Failures`.
+
+| Class | Before | After |
+|---|---|---|
+| Heat Dissipation Failure | 90 | 2,000 |
+| No Failure | 7,714 | 2,000 |
+| Overstrain Failure | 62 | 2,000 |
+| Power Failure | 76 | 2,000 |
+| Random Failures | 14 | 2,000 |
+| Tool Wear Failure | 36 | 2,000 |
+
+![Class balancing](images/p2_balancing.png)
+
+**Limitation:** the synthetic samples of the rarest classes are interpolations between very few real points (14 for `Random Failures`), so they add little new information. `Random Failures` resemble normal operation, so the model is still expected to detect them poorly.
+
+### 4. MLP architecture
+
+- **Input:** the 6 standardized features. **Output:** 6 logits (one per failure type), with `CrossEntropyLoss` (softmax included in the loss).
+- **Architecture:** 6 → 64 → 32 → 6, ReLU activations.
+- **Training:** Adam, learning rate 1e-3, 30 epochs, batch size 256, on the balanced training set (12,000 samples). The real test set (1,999 samples) is evaluated after each epoch.
+
+### 5. Hyperparameter search (GridSearch)
+
+`GridSearchCV` from scikit-learn with `skorch` (`NeuralNetClassifier`).
+
+**Leak-free validation.** A standard cross-validation on the balanced training set would put synthetic points derived from the same real sample in both the training and validation folds, and inflate the scores. Instead:
+- the original (real) training set was split 80/20 (stratified);
+- the 80% part was balanced with the same method as in step 3 (12,000 samples);
+- the 20% part (1,599 samples) was kept **untouched**, with the real imbalanced distribution, as the validation set;
+- a `PredefinedSplit` makes `GridSearchCV` use exactly this split.
+
+**Score:** macro F1-score (accuracy would reward a model that always predicts "No Failure").
+
+| Hyperparameter | Values tested |
+|---|---|
+| Learning rate | 0.01, 0.001 |
+| Optimizer | Adam, SGD |
+| Epochs | 20, 40 |
+| Neurons per hidden layer | 32, 64 |
+| Hidden layers | 1, 2 |
+
+**Best configuration:** Adam, learning rate 0.01, 40 epochs, 1 hidden layer of 64 neurons (validation macro F1 = 0.345).
+
+| lr | Epochs | Neurons | Layers | Optimizer | Validation macro F1 |
+|---|---|---|---|---|---|
+| 0.01 | 40 | 64 | 1 | Adam | 0.345 |
+| 0.001 | 40 | 64 | 2 | Adam | 0.336 |
+| 0.01 | 40 | 32 | 2 | Adam | 0.331 |
+| 0.01 | 40 | 32 | 1 | Adam | 0.330 |
+| 0.01 | 20 | 64 | 1 | Adam | 0.316 |
+
+**Comments**
+
+- The macro F1 is low because the validation set keeps the real distribution (about 96.5% `No Failure`) while the model is trained on balanced data: it tends to raise false alarms on healthy machines, which lowers the precision of the minority classes, and `Random Failures` (about 3 validation samples) are essentially unpredictable. These explanations are hypotheses; the per-class metrics (section 7) give the detail.
+- The differences between the top configurations are small and come from a single validation split with very few rare-class samples, so they should not be over-interpreted.
+- The best configuration lies on the boundary of the grid (largest learning rate, 40 epochs, and the top 4 all use 40 epochs): a wider grid could give slightly better results.
+- Unlike in Part 1, the search was run on training data of the same size as the final training set (12,000 samples), so the selected hyperparameters transfer better to the final training.
+
+### 6. Learning curves
+
 *To be completed.*
 
-### 4. MLP, hyperparameter search, curves, metrics and regularization
+### 7. Metrics
+
+*To be completed.*
+
+### 8. Regularization and comparison
 
 *To be completed.*
 
