@@ -322,15 +322,55 @@ Metrics were computed for both models on three sets: the balanced training set (
 
 ### 8. Regularization and comparison
 
-*To be completed.*
+Six variants of the best architecture found by the GridSearch (6 → 64 → 6, Adam, learning rate 0.01, 40 epochs) were trained under identical conditions:
+
+- **Training data:** the balanced "fit" part of the training set (12,000 samples), without the validation samples.
+- **Validation:** the real validation set (1,599 samples, never used for training), used to select the best epoch (macro F1).
+- **Test:** the real test set, used for the final report only.
+
+The baseline was **retrained in this setup**, so its numbers differ from section 7 (where the model was trained on the whole balanced training set).
+
+| Model | Train acc (balanced) | Best val macro F1* | Test acc | Test macro precision | Test macro recall | Test macro F1 | Epochs run | Best epoch (val) | Time (s) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1. Baseline | 0.9877 | 0.5512 | 0.9135 | 0.4265 | 0.6278 | 0.4932 | 40 | 33 | 4.9 |
+| 2. Weight decay (1e-3) | 0.9680 | 0.4575 | 0.8249 | 0.3452 | 0.6484 | 0.4119 | 40 | 39 | 4.9 |
+| 3. Dropout (0.3) | 0.9814 | 0.5047 | 0.8924 | 0.4049 | 0.6687 | 0.4806 | 40 | 32 | 5.3 |
+| 4. BatchNorm | 0.9812 | 0.5346 | 0.8934 | 0.4060 | 0.6146 | 0.4728 | 40 | 33 | 5.4 |
+| 5. Early stopping (patience 8) | 0.9808 | 0.5263 | 0.8969 | 0.4426 | 0.6250 | 0.5023 | 29 | 21 | 3.6 |
+| 6. Combined (Dropout 0.3 + weight decay 1e-4 + early stopping) | 0.9760 | 0.4689 | 0.8724 | 0.3886 | 0.6381 | 0.4589 | 31 | 23 | 4.0 |
+
+\*Maximum validation macro F1 reached during training. For the runs without early stopping, the evaluated model is the one of the last epoch.
+
+![Regularization comparison](images/p2_regularization_comparison.png)
+
+The baseline and the early-stopping runs use the same seed and therefore follow the same trajectory until early stopping triggers at epoch 29, so the baseline curve is hidden behind it.
+
+**Analysis**
+
+- **Early stopping** gives the best test macro F1 (0.502) and the best macro precision (0.443), and needs fewer epochs (29 instead of 40). The gain over the baseline (+0.009 in macro F1) is however too small to be considered significant.
+- **Weight decay (1e-3)** clearly degrades the results (test macro F1 0.412, accuracy 0.825, and a lower training accuracy): the penalty is probably too strong for this small network, which then underfits. Other values were not tested.
+- **Dropout (0.3)** gives the highest macro recall (0.669) but a lower accuracy and precision: the model detects more failures but raises more false alarms. Its macro F1 (0.481) is slightly below the baseline.
+- **BatchNorm** gives the noisiest validation curve and no improvement (macro F1 0.473).
+- **Combined:** stacking the techniques did not add up (macro F1 0.459, below each of its components taken alone).
+- **No technique clearly beats the baseline.** All of them slightly reduce the training accuracy (0.988 to 0.976–0.981) without improving the test performance. The gap between training and test performance mainly comes from the change of class distribution and from the scarcity of rare-class samples (see section 7), which generic regularizers do not address.
+- **Noise.** The same configuration reaches a test accuracy of 0.883 when trained on the whole balanced training set (section 7) and 0.914 here: a 3-point difference without any regularization, as large as most differences between techniques. The test set contains only 4 `Random Failures` and 9 `Tool Wear Failures`, the validation macro F1 fluctuates by several points from one epoch to the next (the validation set has only about 3 and 7 samples of these classes), and a single seed was used. Only the large effect (weight decay at 1e-3 hurts) is reliable; the other differences cannot be distinguished from noise. A firm ranking would require several seeds or cross-validation.
+
+### 9. Conclusions and limitations (Part 2)
+
+- A careful pipeline was set up: cleaning of inconsistent labels, removal of the leaking `Target` column, stratified split **before** any resampling, scaler fitted on the training set only, and balancing applied to the training data only (hybrid under-sampling + SMOTENC).
+- The final MLP reaches a test accuracy of about 0.88–0.91 and a macro F1 of about 0.48–0.50. It detects three failure types reliably (recall of at least 0.89 for `Heat Dissipation`, `Overstrain` and `Power`) but with many false alarms (about 11% of healthy machines flagged), and it essentially fails on `Tool Wear` and `Random Failures`.
+- Regularization did not bring a clear improvement; early stopping was the most useful technique (same performance, fewer epochs).
+- **Limitations:** very few samples for the rarest classes (14 `Random Failures` and 36 `Tool Wear Failures` in the training set, 4 and 9 in the test set), so all metrics for these classes are noisy; a single random seed; a balancing level (2,000 per class) that is probably too aggressive for the rarest classes; no feature engineering; no tuning of the decision thresholds.
+- **Perspectives:** milder balancing, class weights in the loss, engineered features (temperature difference, mechanical power, torque × tool wear), threshold tuning, and repeated runs or cross-validation to compare techniques reliably.
 
 ## What I learned
 
-- Building and training an MLP in PyTorch: tensors, `Dataset`/`DataLoader`, the training loop and the evaluation loop.
-- Fitting the scaler on the training data only to avoid data leakage, and keeping a separate validation set so that the test set is never used for decisions.
-- Running a hyperparameter search with scikit-learn and skorch, and its pitfalls: a search on a subsample may not transfer to full-data training, and noisy scores make small differences meaningless.
-- Reading learning curves (overfitting, convergence, oscillations) and choosing the right scale for the axes.
-- Regularization is not an automatic improvement: its usefulness depends on whether the model actually overfits.
+- Building and training an MLP in PyTorch: tensors, `Dataset`/`DataLoader`, the training loop and the evaluation loop, for both regression and multi-class classification.
+- Preventing data leakage: fitting the scaler on the training data only, splitting before resampling, removing a column derived from the target, and keeping a separate validation set so that the test set is never used for decisions.
+- Running a hyperparameter search with scikit-learn and skorch, and its pitfalls: a search on a subsample may not transfer to full-data training, a cross-validation on synthetic data leaks information (a `PredefinedSplit` with a real validation set avoids this), and noisy scores make small differences meaningless.
+- Accuracy is misleading on imbalanced data: per-class recall, macro F1-score and the confusion matrix tell the real story. Balancing the training set shifts the class distribution and trades accuracy for the detection of rare failures (more false alarms).
+- Reading learning curves (overfitting, convergence, oscillations) and choosing suitable axis scales.
+- Regularization is not an automatic improvement: its usefulness depends on whether the model actually overfits, and with very few samples per class and a single run, small differences between techniques cannot be interpreted.
 
 ## How to run
 
