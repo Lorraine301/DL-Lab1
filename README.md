@@ -181,8 +181,6 @@ Mean of each variable per class:
 
 ![Correlation matrix](images/p2_correlation.png)
 
-- <<Describe the strongest correlations you see in the heatmap, e.g. which pairs of variables are above |0.8|.>>
-
 **Implications for the modelling**
 
 1. The classes are extremely imbalanced, so the **training set must be balanced** (next step) and the evaluation must use **per-class recall, F1-score per class and macro F1**, with a confusion matrix.
