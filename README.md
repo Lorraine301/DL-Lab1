@@ -104,6 +104,98 @@ Seven variants of the same MLP (4 → 64 → 32 → 1, Adam, lr = 1e-3, 20 epoch
 - Limitations: random split instead of a chronological split (a real forecasting setting would predict future prices), single random seed (no confidence intervals), a search grid that is small and whose best point lies on its boundary, and R² used as a substitute for accuracy.
 
 ## Part 2 – Multi-class classification (Predictive Maintenance)
+**Dataset:** [Machine Predictive Maintenance Classification](https://www.kaggle.com/datasets/shivamb/machine-predictive-maintenance-classification), 10,000 records of a machine process (product type, air temperature, process temperature, rotational speed, torque, tool wear), with two label columns: `Target` (failure yes/no) and `Failure Type` (type of failure).
+
+**Task:** multi-class classification of `Failure Type` (6 classes) from the sensor measurements.
+
+### 1. Pre-processing (cleaning and standardization)
+
+**Data quality checks**
+
+- No missing values, no duplicated rows, no duplicated `Product ID`.
+- A cross-tabulation of `Target` and `Failure Type` revealed **9 inconsistent rows** (`Target = 1` but `Failure Type = No Failure`). They were **removed** (9,991 rows remain).
+- The 18 `Random Failures` rows have `Target = 0` (random failures are not linked to the sensor values). They were **kept** as their own class, but they are expected to be unpredictable.
+
+**Transformations**
+
+| Step | Decision | Reason |
+|---|---|---|
+| Columns `UDI`, `Product ID` | Dropped | Simple identifiers, no predictive information |
+| Column `Target` | Dropped | It is derived from `Failure Type`: keeping it would be **data leakage** |
+| Column `Type` (L/M/H) | Ordinal encoding L=0, M=1, H=2 | Quality variants with a natural order |
+| Target `Failure Type` | `LabelEncoder` | 0 = Heat Dissipation, 1 = No Failure, 2 = Overstrain, 3 = Power, 4 = Random, 5 = Tool Wear |
+| Train/test split | Stratified 80/20 (`random_state=42`): 7,992 / 1,999 samples | Every class keeps its proportion in both sets |
+| Standardization | `StandardScaler` (z-score), **fitted on the training set only** | Features have very different scales (about 300 K, 1500 rpm, 40 Nm, 0–250 min); avoids data leakage |
+
+The split is done **before** any resampling: class balancing (see below) is applied to the training set only, and the test set keeps the real, imbalanced distribution.
+
+### 2. Exploratory Data Analysis
+
+**Class distribution**
+
+| Failure Type | Label | Samples | Share |
+|---|---|---|---|
+| No Failure | 1 | 9,643 | 96.52% |
+| Heat Dissipation Failure | 0 | 112 | 1.12% |
+| Power Failure | 3 | 95 | 0.95% |
+| Overstrain Failure | 2 | 78 | 0.78% |
+| Tool Wear Failure | 5 | 45 | 0.45% |
+| Random Failures | 4 | 18 | 0.18% |
+
+![Class distribution](images/p2_class_distribution.png)
+
+The dataset is **extremely imbalanced**: a model that always predicts "No Failure" would reach 96.5% accuracy without detecting any failure. Accuracy alone is therefore a misleading metric, and the evaluation will rely on per-class recall and the macro F1-score.
+
+**Features by failure type**
+
+![Boxplots by failure type](images/p2_boxplots_by_failure.png)
+
+Mean of each variable per class:
+
+| Failure Type | air_temp | process_temp | rot_speed | torque | tool_wear |
+|---|---|---|---|---|---|
+| Heat Dissipation Failure | 302.6 | 310.8 | 1338.0 | 52.8 | 107.3 |
+| No Failure | 300.0 | 310.0 | 1540.4 | 39.6 | 106.7 |
+| Overstrain Failure | 299.9 | 310.1 | 1354.2 | 56.9 | 208.2 |
+| Power Failure | 300.1 | 310.0 | 1764.0 | 48.5 | 101.9 |
+| Random Failures | 300.8 | 310.8 | 1489.4 | 43.5 | 119.9 |
+| Tool Wear Failure | 300.3 | 310.2 | 1570.7 | 37.2 | 216.6 |
+
+- **Tool Wear Failure** and **Overstrain Failure** are clearly identified by a high and narrow `tool_wear` (mean about 210–217 min, versus about 107 for normal operation).
+- **Overstrain Failure** also has a high torque (56.9 Nm) and a low, narrow rotational speed.
+- **Heat Dissipation Failure** has a higher air temperature (302.6 K vs 300.0 K) and a low, narrow rotational speed (about 1,340 rpm).
+- **Power Failure** has a very wide spread of both `rot_speed` and `torque`, covering extreme values on both sides, which suggests two distinct failure regimes.
+- **Random Failures** show no clear signature: their distributions overlap with normal operation on all variables.
+- `process_temp` differs little between classes.
+
+**Torque vs rotational speed**
+
+![Torque vs rotational speed](images/p2_torque_vs_speed.png)
+
+- Torque and rotational speed follow a strong, **non-linear inverse relationship**, which is consistent with a roughly constant mechanical power during normal operation.
+- **Power Failures** are located at the two extremes of this curve: high torque with low speed (top left) and very low torque with high speed (above about 2,150 rpm, bottom right). This is consistent with failures linked to a mechanical power that is too high or too low (hypothesis).
+- **Overstrain** and **Heat Dissipation** failures form compact clusters at low speed (about 1,250–1,450 rpm) and medium to high torque.
+- **Tool Wear** and **Random** failures lie along the normal operating curve: torque and speed alone cannot separate them from normal operation (for Tool Wear, `tool_wear` is the discriminating variable).
+
+**Correlations**
+
+![Correlation matrix](images/p2_correlation.png)
+
+- <<Describe the strongest correlations you see in the heatmap, e.g. which pairs of variables are above |0.8|.>>
+
+**Implications for the modelling**
+
+1. The classes are extremely imbalanced, so the **training set must be balanced** (next step) and the evaluation must use **per-class recall, F1-score per class and macro F1**, with a confusion matrix.
+2. Several classes overlap with normal operation (Tool Wear, Random), and the relationships are non-linear (torque/speed curve, failures at both extremes). A non-linear model such as an MLP is therefore appropriate.
+3. `Random Failures` are expected to remain unpredictable, whatever the model.
+4. The stratified test set contains very few samples of the rarest classes (about 4 `Random Failures` and 9 `Tool Wear Failures`), so the metrics on these classes will be noisy.
+5. Possible improvement, **not applied in this lab**: engineered features such as the temperature difference, the mechanical power (torque × speed) or torque × tool wear.
+
+### 3. Data augmentation / class balancing
+
+*To be completed.*
+
+### 4. MLP, hyperparameter search, curves, metrics and regularization
 
 *To be completed.*
 
