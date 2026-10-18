@@ -255,11 +255,70 @@ Balancing is applied to the **training set only**; the test set keeps its real, 
 
 ### 6. Learning curves
 
-*To be completed.*
+Curves are plotted for the base MLP and for the GridSearch MLP. The training curve is computed on the **balanced** training set and the test curve on the **real** (imbalanced) test set, so their absolute values are not directly comparable.
+
+![Base MLP curves](images/p2_curves_base.png)
+
+![GridSearch MLP curves](images/p2_curves_best.png)
+
+GridSearch MLP, logged every 5 epochs:
+
+| Epoch | Train loss | Test loss | Train accuracy | Test accuracy |
+|---|---|---|---|---|
+| 1 | 0.4037 | 0.9036 | 0.8531 | 0.6063 |
+| 5 | 0.1861 | 0.5964 | 0.9429 | 0.7319 |
+| 10 | 0.1391 | 0.5157 | 0.9579 | 0.7974 |
+| 15 | 0.1110 | 0.4760 | 0.9672 | 0.8304 |
+| 20 | 0.0943 | 0.4432 | 0.9733 | 0.8419 |
+| 25 | 0.0895 | 0.4953 | 0.9745 | 0.8424 |
+| 30 | 0.0811 | 0.3417 | 0.9817 | 0.8889 |
+| 35 | 0.0748 | 0.3439 | 0.9834 | 0.8969 |
+| 40 | 0.0671 | 0.4054 | 0.9822 | 0.8834 |
+
+**Interpretation**
+
+- The training loss decreases steadily and the training accuracy reaches about 98%.
+- The test loss decreases much more slowly, stays 5 to 6 times higher (0.34 to 0.50) and fluctuates from one epoch to another: there is a clear gap between training and test performance.
+- The test accuracy rises from 0.61 to about 0.89 and is still improving until epoch 35, then drops slightly at epoch 40. This is consistent with the best configuration lying on the boundary of the grid (40 epochs) and suggests that the model could still benefit from more training.
+- The gap is partly structural (the model is trained on balanced data and evaluated on imbalanced data) and partly overfitting on the rare classes (see section 7).
+- <<Base MLP: describe what you see in images/p2_curves_base.png (convergence speed, stability, gap between train and test).>>
 
 ### 7. Metrics
 
-*To be completed.*
+Metrics were computed for both models on three sets: the balanced training set (what the model has seen), the training set with its real distribution, and the real test set. *Sensitivity* is the recall (share of the true failures of a class that are detected).
+
+| Model | Set | Accuracy | Precision (macro) | Sensitivity (macro recall) | F1 (macro) | F1 (weighted) |
+|---|---|---|---|---|---|---|
+| Base MLP | Train (balanced) | 0.9632 | 0.9651 | 0.9632 | 0.9623 | 0.9623 |
+| Base MLP | Train (real distribution) | 0.8197 | 0.4077 | 0.9054 | 0.4855 | 0.8844 |
+| Base MLP | Test (real distribution) | 0.8014 | 0.3941 | 0.6813 | 0.4625 | 0.8730 |
+| GridSearch MLP | Train (balanced) | 0.9822 | 0.9826 | 0.9822 | 0.9819 | 0.9819 |
+| GridSearch MLP | Train (real distribution) | 0.8946 | 0.4484 | 0.9284 | 0.5377 | 0.9301 |
+| GridSearch MLP | Test (real distribution) | 0.8834 | 0.4073 | 0.6487 | 0.4797 | 0.9224 |
+
+**Per-class results of the GridSearch MLP on the test set**
+
+| Failure Type | Precision | Recall (sensitivity) | F1-score | Support |
+|---|---|---|---|---|
+| Heat Dissipation Failure | 0.458 | 1.000 | 0.629 | 22 |
+| No Failure | 0.994 | 0.886 | 0.937 | 1929 |
+| Overstrain Failure | 0.533 | 1.000 | 0.696 | 16 |
+| Power Failure | 0.447 | 0.895 | 0.596 | 19 |
+| Random Failures | 0.000 | 0.000 | 0.000 | 4 |
+| Tool Wear Failure | 0.011 | 0.111 | 0.021 | 9 |
+
+![Confusion matrix](images/p2_confusion_matrix.png)
+
+**Analysis**
+
+- **Distribution shift.** The performance drop already appears on the real training data (accuracy 0.895, macro precision 0.448) and is similar on the test set (0.883, 0.407). It is therefore mostly caused by the change of class distribution (balanced for training, about 96.5% `No Failure` in reality), which lowers the precision of the minority classes.
+- **Overfitting on rare classes.** The macro recall is 0.928 on the real training set but 0.649 on the test set: the model detects the rare failures it has already seen far better than new ones.
+- **Well-detected failures.** `Heat Dissipation`, `Overstrain` and `Power` failures are detected almost perfectly (recall 1.00, 1.00 and 0.89: 55 of 57 failures), but with a precision of only 0.45 to 0.53, because of false alarms.
+- **False alarms.** 219 of the 1,929 healthy machines (11.4%) are flagged as failing. This is why the accuracy (88.3%) is lower than that of a trivial model that always predicts "No Failure" (96.5%): the model trades accuracy for the detection of failures.
+- **Undetected failures.** `Tool Wear` (recall 0.11) and `Random Failures` (recall 0.00) are essentially not detected. 87 healthy machines are predicted as `Tool Wear` and 74 as `Random Failures`. A likely explanation (hypothesis) is that these classes overlap with normal operation (see the EDA), so their thousands of synthetic samples, generated from only 36 and 14 real points, cover the region of normal operation.
+- **Base vs GridSearch.** The GridSearch MLP is better in accuracy (0.883 vs 0.801) and slightly better in macro F1 (0.480 vs 0.463), with a slightly lower macro recall (0.649 vs 0.681). The improvement is modest and comes from a single run.
+- **Reliability of the numbers.** The test set contains only 4 `Random Failures` and 9 `Tool Wear Failures`: one more correct prediction changes the recall of `Tool Wear` by 11 points, so the metrics of these classes are very noisy.
+- **Possible improvements (not tested):** a milder balancing (keeping more `No Failure` samples), class weights in the loss, adjusting the decision thresholds, or engineered features (temperature difference, mechanical power, torque × tool wear).
 
 ### 8. Regularization and comparison
 
